@@ -1,0 +1,18 @@
+{
+  "confirm": false,
+  "randomize_next": false,
+  "manual_select": false,
+  "students": [
+    {
+      "student_id": "61042",
+      "title": "เด็กชาย",
+      "name": "นนทกร",
+      "surname": "สายฟ้า",
+      "room": "12",
+      "number": "7",
+      "course": "คณิตศาสตร์เสริม 6",
+      "teacher": "นายซีเอ บีอา",
+      "year_text": "ปีการศึกษา 2569 M.3 วันพฤหัสบดี"
+    }
+  ]
+}
