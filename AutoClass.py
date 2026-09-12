@@ -9,6 +9,8 @@
                                                                                     
 # Made by @kradengdeng
 # Notice: Please install latest python to use this program!
+# Latest Update: 12/09/2026 : 9:21 PM (day-month-year)
+# Visit github.com/kradengdeng/autoclass
 
 import sys
 import subprocess
