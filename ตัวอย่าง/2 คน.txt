@@ -1,0 +1,29 @@
+{
+  "confirm": false,
+  "randomize_next": false,
+  "manual_select": false,
+  "students": [
+    {
+      "student_id": "62135",
+      "title": "เด็กชาย",
+      "name": "ภูริณัฐ",
+      "surname": "แสงทอง",
+      "room": "14",
+      "number": "3",
+      "course": "คณิตศาสตร์เสริม 6",
+      "teacher": "นายซีเอ บีอา",
+      "year_text": "ปีการศึกษา 2569 M.3 วันพฤหัสบดี"
+    },
+    {
+      "student_id": "63482",
+      "title": "เด็กหญิง",
+      "name": "พิมพ์ชนก",
+      "surname": "ใจดี",
+      "room": "11",
+      "number": "18",
+      "course": "วิทยาศาสตร์เพิ่มเติม",
+      "teacher": "นางสาวดีอี เอฟจี",
+      "year_text": "ปีการศึกษา 2569 M.3 วันพุธ"
+    }
+  ]
+}
