@@ -1,3 +1,15 @@
+#  $$$$$$\              $$\                $$$$$$\  $$\                               
+# $$  __$$\             $$ |              $$  __$$\ $$ |                              
+# $$ /  $$ |$$\   $$\ $$$$$$\    $$$$$$\  $$ /  \__|$$ | $$$$$$\   $$$$$$$\  $$$$$$$\ 
+# $$$$$$$$ |$$ |  $$ |\_$$  _|  $$  __$$\ $$ |      $$ | \____$$\ $$  _____|$$  _____|
+# $$  __$$ |$$ |  $$ |  $$ |    $$ /  $$ |$$ |      $$ | $$$$$$$ |\$$$$$$\  \$$$$$$\  
+# $$ |  $$ |$$ |  $$ |  $$ |$$\ $$ |  $$ |$$ |  $$\ $$ |$$  __$$ | \____$$\  \____$$\ 
+# $$ |  $$ |\$$$$$$  |  \$$$$  |\$$$$$$  |\$$$$$$  |$$ |\$$$$$$$ |$$$$$$$  |$$$$$$$  |
+# \__|  \__| \______/    \____/  \______/  \______/ \__| \_______|\_______/ \_______/ 
+                                                                                    
+# Made by @kradengdeng
+# Notice: Please install latest python to use this program!
+
 import sys
 import subprocess
 import time
@@ -5,38 +17,11 @@ import random
 import json
 import traceback
 import tempfile
+import os
+import threading
 from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-
-def install_packages():
-    packages = {
-        "selenium": "selenium",
-        "colorama": "colorama",
-    }
-
-    for module, package in packages.items():
-        try:
-            __import__(module)
-        except ImportError:
-            print(f"Installing {package}...")
-            subprocess.check_call(
-                [sys.executable, "-m", "pip", "install", package]
-            )
-
-
-install_packages()
-
-from colorama import Fore, Style, init
-
-init(autoreset=True)
-
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait, Select
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
 
 
 BASE_URL = "https://ssp-elective-course.web.app/"
@@ -47,7 +32,25 @@ SESSION_ID = SESSION_STARTED.strftime("session_%m%d%Y_%H%M")
 SESSION_DIR = Path(__file__).resolve().parent / "session"
 SESSION_LOG_FILE = SESSION_DIR / f"{SESSION_ID}.txt"
 SESSION_FINAL_STATUS = "completed"
-manual_select = False
+FIRST_RUN = not DATA_FILE.exists() or not SESSION_DIR.exists()
+
+# Console progress state.
+CONSOLE_LOCK = threading.Lock()
+PROGRESS_TOTAL = 0
+PROGRESS_LINES = {}
+PROGRESS_ACTIVE = False
+
+# ANSI colors used before colorama is installed/imported.
+ANSI_RESET = "\033[0m"
+ANSI_CYAN = "\033[96m"
+ANSI_YELLOW = "\033[93m"
+ANSI_RED = "\033[91m"
+ANSI_GREEN = "\033[92m"
+ANSI_BLACK = "\033[90m"
+
+
+def timestamp():
+    return datetime.now().strftime("%H:%M:%S")
 
 
 def init_session():
@@ -56,7 +59,7 @@ def init_session():
     SESSION_LOG_FILE.write_text(
         f"Session: {SESSION_ID}\n"
         f"Started: {SESSION_STARTED.isoformat(timespec='seconds')}\n"
-        + "-" * 60
+        + "-" * 73
         + "\n",
         encoding="utf-8"
     )
@@ -66,10 +69,7 @@ def log_session_line(line):
     try:
         SESSION_DIR.mkdir(parents=True, exist_ok=True)
 
-        with SESSION_LOG_FILE.open(
-            "a",
-            encoding="utf-8"
-        ) as log:
+        with SESSION_LOG_FILE.open("a", encoding="utf-8") as log:
             log.write(line + "\n")
     except Exception:
         pass
@@ -77,183 +77,89 @@ def log_session_line(line):
 
 def finish_session(status):
     ended = datetime.now()
-
-    log_session_line(
-        "-" * 60
-    )
-    log_session_line(
-        f"[ SESSION ] Status: {status}"
-    )
+    log_session_line("-" * 73)
+    log_session_line(f"[ SESSION ] Status: {status}")
     log_session_line(
         f"[ SESSION ] Ended: {ended.isoformat(timespec='seconds')}"
     )
 
 
-
-def load_data():
-    notice("Checking data from data.json", Fore.LIGHTMAGENTA_EX)
-
-    if not DATA_FILE.exists():
-        sample = {
-            "confirm": False,
-            "randomize_next": True,
-            "manual_select": False,
-            "students": [
-                {
-                    "student_id": "",
-                    "title": "",
-                    "name": "",
-                    "surname": "",
-                    "room": "",
-                    "number": "",
-                    "course": "คณิตศาสตร์เสริม 6",
-                    "teacher": "นายทิวัตถ์ กัลยาประสิทธิ์"
-                }
-            ],
-            "year_text": "ปีการศึกษา 2569 M.3 วันพุธ"
-        }
-
-        DATA_FILE.write_text(
-            json.dumps(
-                sample,
-                ensure_ascii=False,
-                indent=4
-            ),
-            encoding="utf-8"
-        )
-
-        error("Not found! Please fill data in data.json", Fore.LIGHTRED_EX)
-        notice(
-            "Created data.json in this folder.",
-            Fore.LIGHTYELLOW_EX
-        )
-        return None
-
-    try:
-        data = json.loads(
-            DATA_FILE.read_text(encoding="utf-8")
-        )
-    except json.JSONDecodeError as exc:
-        error(f"Invalid JSON in data.json: {exc}")
-        return None
-    except OSError as exc:
-        error(f"Could not read data.json: {exc}")
-        return None
-
-    if not isinstance(data, dict):
-        error("Invalid data.json: root must be an object.")
-        return None
-
-    required_keys = {
-        "confirm",
-        "randomize_next",
-        "manual_select",
-        "students",
-        "year_text"
-    }
-
-    missing = required_keys - set(data.keys())
-
-    if missing:
-        error(
-            "Invalid data.json: missing "
-            + ", ".join(sorted(missing))
-        )
-        return None
-
-    if not isinstance(data["confirm"], bool):
-        error("Invalid data.json: confirm must be true or false.")
-        return None
-
-    if not isinstance(data["randomize_next"], bool):
-        error(
-            "Invalid data.json: randomize_next "
-            "must be true or false."
-        )
-        return None
-
-    if not isinstance(data["manual_select"], bool):
-        error(
-            "Invalid data.json: manual_select "
-            "must be true or false."
-        )
-        return None
-
-    if not isinstance(data["year_text"], str) or not data["year_text"].strip():
-        error("Invalid data.json: year_text must be a non-empty string.")
-        return None
-
-    if not isinstance(data["students"], list) or not data["students"]:
-        error(
-            "Invalid data.json: students must be a non-empty list."
-        )
-        return None
-
-    student_keys = {
-        "student_id",
-        "title",
-        "name",
-        "surname",
-        "room",
-        "number",
-        "course",
-        "teacher"
-    }
-
-    for index, student in enumerate(data["students"], start=1):
-        if not isinstance(student, dict):
-            error(f"Invalid data.json: student {index} must be an object.")
-            return None
-
-        missing_student = student_keys - set(student.keys())
-
-        if missing_student:
-            error(
-                f"Invalid data.json: student {index} missing "
-                + ", ".join(sorted(missing_student))
-            )
-            return None
-
-        for key in student_keys:
-            if not isinstance(student[key], str):
-                error(
-                    f"Invalid data.json: student {index} "
-                    f"'{key}' must be a string."
-                )
-                return None
-
-        if not student["course"].strip():
-            error(
-                f"Invalid data.json: student {index} "
-                "course cannot be empty."
-            )
-            return None
-
-        if not student["teacher"].strip():
-            error(
-                f"Invalid data.json: student {index} "
-                "teacher cannot be empty."
-            )
-            return None
-
-    notice("data.json is valid.", Fore.LIGHTGREEN_EX)
-    return data
-
-
-
-def timestamp():
-    return datetime.now().strftime("%H:%M:%S")
-
-
-def notice(message, color=Fore.LIGHTMAGENTA_EX):
+def bootstrap_notice(message, color=ANSI_CYAN, edit=False):
     line = f"[ NOTICE : {timestamp()} ] {message}"
 
-    print(
-        f"{color}{line}{Style.RESET_ALL}"
-    )
+    with CONSOLE_LOCK:
+        if edit:
+            print("\r\033[2K" + color + line + ANSI_RESET, end="", flush=True)
+            print()
+        else:
+            print(color + line + ANSI_RESET, flush=True)
 
     log_session_line(line)
 
+
+def bootstrap_separator():
+    with CONSOLE_LOCK:
+        print(ANSI_BLACK + "-" * 73 + ANSI_RESET, flush=True)
+
+
+def install_packages():
+    packages = {
+        "selenium": "selenium",
+        "colorama": "colorama",
+    }
+
+    missing = []
+
+    for module, package in packages.items():
+        try:
+            __import__(module)
+        except ImportError:
+            missing.append(package)
+
+    if not missing:
+        return
+
+    bootstrap_notice("Installing package...", ANSI_YELLOW)
+
+    for package in missing:
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", package],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    bootstrap_notice("All package installed.", ANSI_YELLOW, edit=True)
+
+
+# Runtime dependencies are imported after installation in __main__.
+
+Fore = type("_Fore", (), {
+    "LIGHTMAGENTA_EX": "\033[95m",
+    "LIGHTYELLOW_EX": ANSI_YELLOW,
+    "LIGHTGREEN_EX": ANSI_GREEN,
+    "LIGHTRED_EX": ANSI_RED,
+    "LIGHTCYAN_EX": ANSI_CYAN,
+    "LIGHTBLACK_EX": ANSI_BLACK,
+})
+Style = type("_Style", (), {"RESET_ALL": ANSI_RESET})
+
+
+manual_select = False
+
+
+def notice(message, color=Fore.LIGHTMAGENTA_EX, write_log=True):
+    line = f"[ NOTICE : {timestamp()} ] {message}"
+
+    with CONSOLE_LOCK:
+        print(f"{color}{line}{Style.RESET_ALL}", flush=True)
+
+    if write_log:
+        log_session_line(line)
+
+
+def separator():
+    with CONSOLE_LOCK:
+        print(Fore.LIGHTBLACK_EX + "-" * 73 + Style.RESET_ALL, flush=True)
 
 
 def step(message):
@@ -268,9 +174,214 @@ def error(message, color=Fore.LIGHTRED_EX):
     notice(message, color)
 
 
-def separator():
-    print(Fore.LIGHTBLACK_EX + "-" * 56)
+def clear_console():
+    with CONSOLE_LOCK:
+        os.system("cls" if os.name == "nt" else "clear")
 
+
+def student_display_name(student):
+    return (
+        f"{student.get('title', '')}"
+        f"{student.get('name', '')} "
+        f"{student.get('surname', '')}"
+    ).strip()
+
+
+def student_status_line(student, status):
+    return (
+        f"{student.get('student_id', '')} - "
+        f"{student.get('title', '')}"
+        f"{student.get('name', '')} "
+        f"{student.get('surname', '')} : {status}"
+    )
+
+
+def render_working_lines(students):
+    global PROGRESS_TOTAL, PROGRESS_LINES, PROGRESS_ACTIVE
+
+    PROGRESS_TOTAL = len(students)
+    PROGRESS_LINES = {}
+    PROGRESS_ACTIVE = True
+
+    with CONSOLE_LOCK:
+        for index, student in enumerate(students, start=1):
+            line = student_status_line(student, "Working...")
+            PROGRESS_LINES[index] = line
+            print(
+                Fore.LIGHTYELLOW_EX +
+                f"[ NOTICE : {timestamp()} ] {line}" +
+                Style.RESET_ALL,
+                flush=True,
+            )
+            log_session_line(f"[ NOTICE : {timestamp()} ] {line}")
+
+
+def update_student_status(index, student, status, color):
+    if not PROGRESS_ACTIVE:
+        notice(student_status_line(student, status), color)
+        return
+
+    line = student_status_line(student, status)
+    prefix = f"[ NOTICE : {timestamp()} ] "
+
+    with CONSOLE_LOCK:
+        rows_up = PROGRESS_TOTAL - index + 1
+
+        print(
+            f"\033[{rows_up}A",
+            end="",
+        )
+
+        print(
+            "\r\033[2K" +
+            color +
+            prefix + line +
+            Style.RESET_ALL,
+            end="",
+            flush=True,
+        )
+
+        print(
+            f"\033[{rows_up}B\r",
+            end="",
+            flush=True,
+        )
+
+    log_session_line(prefix + line)
+
+
+def load_data():
+    # First run: create the required files/folder, then stop.
+    if not DATA_FILE.exists():
+        sample = {
+            "confirm": False,
+            "randomize_next": True,
+            "manual_select": False,
+            "students": [
+                {
+                    "student_id": "",
+                    "title": "",
+                    "name": "",
+                    "surname": "",
+                    "room": "",
+                    "number": "",
+                    "course": "คณิตศาสตร์เสริม 6",
+                    "teacher": "นายทิวัตถ์ กัลยาประสิทธิ์",
+                    "year_text": "ปีการศึกษา 2569 M.3 วันพุธ"
+                }
+            ]
+        }
+
+        DATA_FILE.write_text(
+            json.dumps(sample, ensure_ascii=False, indent=4),
+            encoding="utf-8"
+        )
+
+        notice(
+            "Created data.json and session folder.",
+            Fore.LIGHTYELLOW_EX
+        )
+        notice(
+            "Please fill data in data.json!",
+            Fore.LIGHTRED_EX
+        )
+        return None
+
+    try:
+        data = json.loads(DATA_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        error("Invalid JSON in data.json.")
+        return None
+    except OSError:
+        error("Could not read data.json.")
+        return None
+
+    if not isinstance(data, dict):
+        error("Invalid data.json: root must be an object.")
+        return None
+
+    required_keys = {
+        "confirm",
+        "randomize_next",
+        "manual_select",
+        "students"
+    }
+
+    missing = required_keys - set(data.keys())
+    if missing:
+        error(
+            "Invalid data.json: missing " +
+            ", ".join(sorted(missing))
+        )
+        return None
+
+    if not isinstance(data["confirm"], bool):
+        error("Invalid data.json: confirm must be true or false.")
+        return None
+
+    if not isinstance(data["randomize_next"], bool):
+        error("Invalid data.json: randomize_next must be true or false.")
+        return None
+
+    if not isinstance(data["manual_select"], bool):
+        error("Invalid data.json: manual_select must be true or false.")
+        return None
+
+    if not isinstance(data["students"], list) or not data["students"]:
+        error("Invalid data.json: students must be a non-empty list.")
+        return None
+
+    student_keys = {
+        "student_id",
+        "title",
+        "name",
+        "surname",
+        "room",
+        "number",
+        "course",
+        "teacher",
+        "year_text"
+    }
+
+    for index, student in enumerate(data["students"], start=1):
+        if not isinstance(student, dict):
+            error(f"Invalid data.json: student {index} must be an object.")
+            return None
+
+        missing_student = student_keys - set(student.keys())
+        if missing_student:
+            error(
+                f"Invalid data.json: student {index} missing " +
+                ", ".join(sorted(missing_student))
+            )
+            return None
+
+        for key in student_keys:
+            if not isinstance(student[key], str):
+                error(
+                    f"Invalid data.json: student {index} '{key}' must be a string."
+                )
+                return None
+
+        if not student["course"].strip():
+            error(
+                f"Invalid data.json: student {index} course cannot be empty."
+            )
+            return None
+
+        if not student["teacher"].strip():
+            error(
+                f"Invalid data.json: student {index} teacher cannot be empty."
+            )
+            return None
+
+        if not student["year_text"].strip():
+            error(
+                f"Invalid data.json: student {index} year_text cannot be empty."
+            )
+            return None
+
+    return data
 
 
 def get_screen_size():
@@ -563,10 +674,6 @@ def select_course(driver, course_name, teacher_name, timeout=15):
             course_name,
             teacher_name
         ):
-            success(
-                f"Course/teacher matched exactly: "
-                f"{course_name} / {teacher_name}"
-            )
             return
 
         time.sleep(0.01 if not randomize_next else 0.05)
@@ -693,7 +800,6 @@ def select_confirmation(driver):
         checked = driver.execute_script(script)
 
         if checked:
-            success("Confirmation checkbox selected.")
             return
 
         time.sleep(0.01 if not randomize_next else 0.05)
@@ -705,96 +811,53 @@ def select_confirmation(driver):
 def process_student(driver, student, index):
     started = time.perf_counter()
 
-    full_name = (
-        f"{student.get('title', '')}"
-        f"{student.get('name', '')} "
-        f"{student.get('surname', '')}"
-    ).strip()
-
     course = student["course"]
     teacher = student["teacher"]
 
     try:
-        step(f"Student {index}: Opening enrollment page")
         driver.get(BASE_URL + "enroll")
 
         try:
-            total_students = len(students)
-            arrange_browser(
-                driver,
-                index,
-                total_students
-            )
+            arrange_browser(driver, index, len(students))
         except Exception:
             pass
 
-        step(f"Student {index}: Selecting academic year")
-        select_text(driver, "//select[1]", year_text)
+        select_text(driver, "//select[1]", student["year_text"])
         wait_next_delay()
 
-        step(f"Student {index}: Continuing")
         click_text(driver, "เลือก")
 
-        step(f"Student {index}: Filling student information")
         fill_student_page(driver, student)
 
         wait_next_delay()
-        step(f"Student {index}: Opening course selection")
         click_text(driver, "ถัดไป")
 
         wait_next_delay()
-        step(f"Student {index}: Selecting one course")
         click_text(driver, "เลือก 1 วิชา")
 
         wait_next_delay()
-        step(f"Student {index}: Opening course list")
         click_text(driver, "ถัดไป")
 
         if manual_select:
-            notice(
-                f"Student {index}: Manual select is ON. "
-                "Stopping at course selection page.",
+            update_student_status(
+                index,
+                student,
+                "Manual select.",
                 Fore.LIGHTYELLOW_EX
-            )
-            notice(
-                f"Student {index}: Select the course manually. "
-                "The browser will remain open.",
-                Fore.LIGHTCYAN_EX
             )
             return index
 
-        step(
-            f"Student {index}: Searching course "
-            f'"{course}" + "{teacher}"'
-        )
-
         try:
             select_course(driver, course, teacher)
-            success(f"Student {index}: Course found automatically")
         except TimeoutException:
-            error(
-                f"Student {index}: Course not found automatically"
-            )
-            print(
-                Fore.LIGHTCYAN_EX +
-                "Restore the browser, select the course manually, "
-                "then press Enter here."
-            )
-
+            # Keep the same manual fallback behavior without extra NOTICE lines.
             try:
                 screen_width, screen_height = get_screen_size()
-
                 manual_width = 1100
-                manual_height = min(
-                    800,
-                    screen_height - 80
-                )
+                manual_height = min(800, screen_height - 80)
 
                 driver.set_window_rect(
-                    x=max(
-                        0,
-                        (screen_width - manual_width) // 2
-                    ),
+                    x=max(0, (screen_width - manual_width) // 2),
                     y=35,
                     width=manual_width,
                     height=manual_height
@@ -802,10 +865,16 @@ def process_student(driver, student, index):
             except Exception:
                 pass
 
-            input(
-                Fore.LIGHTCYAN_EX +
-                f"[ Student {index} ] Press Enter after manual selection... "
-            )
+            with CONSOLE_LOCK:
+                print(
+                    Fore.LIGHTCYAN_EX +
+                    f"Student {index}: Select the course manually, "
+                    "then press Enter..." +
+                    Style.RESET_ALL,
+                    flush=True,
+                )
+
+            input()
 
             selected = driver.execute_script(
                 """
@@ -820,80 +889,55 @@ def process_student(driver, student, index):
                     "No course checkbox is selected after manual selection."
                 )
 
-            success(f"Student {index}: Manual course selection detected")
-
-        step(f"Student {index}: Selecting confirmation checkbox")
         select_confirmation(driver)
 
         elapsed = time.perf_counter() - started
-        status = "Confirmed" if confirm else "Not confirm"
-
-        success(
-            f"Student {index} ({full_name}): "
-            f"Completed in {elapsed:.2f}s"
+        status = f"Done! Finished in {elapsed:.2f}s."
+        update_student_status(
+            index,
+            student,
+            status,
+            Fore.LIGHTGREEN_EX
         )
-        notice(
-            f"Class: {course} {teacher} -- {status}",
-            Fore.LIGHTCYAN_EX
-        )
-        separator()
 
         if confirm:
             click_text(driver, "ลงทะเบียน")
-            success(f"Student {index}: Registration submitted")
             driver.quit()
-        else:
-            notice(
-                f"Student {index}: Final ลงทะเบียน was NOT clicked",
-                Fore.LIGHTYELLOW_EX
-            )
-            notice(
-                f"Student {index}: Browser remains open",
-                Fore.LIGHTYELLOW_EX
-            )
+
+        return index
 
     except Exception as exc:
         elapsed = time.perf_counter() - started
-        error(
-            f"Student {index} ({full_name}): Failed after "
-            f"{elapsed:.2f}s"
-        )
-        error(str(exc))
-        notice(
-            f"Class: {course} {teacher} -- Not completed",
+        update_student_status(
+            index,
+            student,
+            f"Failed after {elapsed:.2f}s.",
             Fore.LIGHTRED_EX
         )
-        separator()
+        log_session_line(f"[ ERROR : Student {index} ] {exc}")
+        log_session_line(traceback.format_exc())
+        return index
 
-        if driver is not None:
-            print(
-                Fore.LIGHTYELLOW_EX +
-                f"Student {index}: Browser remains open for inspection."
-            )
-        else:
-            print(
-                Fore.LIGHTYELLOW_EX +
-                f"Student {index}: Browser was not created."
-            )
-
-    return index
 
 def create_driver(index):
     options = webdriver.ChromeOptions()
     options.page_load_strategy = "eager"
     options.add_argument("--start-maximized")
 
+    # Keep Chrome/ChromeDriver diagnostics out of the console.
+    # They are not part of the NOTICE interface and should not be shown.
+    options.add_argument("--disable-logging")
+    options.add_argument("--log-level=3")
+    options.add_experimental_option("excludeSwitches", ["enable-logging"])
+
     profile_dir = Path(
-        tempfile.mkdtemp(
-            prefix=f"elective_student_{index}_"
-        )
+        tempfile.mkdtemp(prefix=f"elective_student_{index}_")
     )
 
-    options.add_argument(
-        f"--user-data-dir={profile_dir}"
-    )
+    options.add_argument(f"--user-data-dir={profile_dir}")
 
-    return webdriver.Chrome(options=options)
+    service = Service(log_output=subprocess.DEVNULL)
+    return webdriver.Chrome(service=service, options=options)
 
 
 def main():
@@ -902,53 +946,47 @@ def main():
     if data is None:
         return
 
-    global confirm, randomize_next, manual_select, students, year_text
+    global confirm, randomize_next, manual_select, students
     global SESSION_FINAL_STATUS
 
     confirm = data["confirm"]
     randomize_next = data["randomize_next"]
     manual_select = data["manual_select"]
     students = data["students"]
-    year_text = data["year_text"]
 
-    notice("Running task...", Fore.LIGHTMAGENTA_EX)
+    # Start prompt.
+    answer = input(
+        f"{Fore.LIGHTYELLOW_EX}"
+        f"[ NOTICE : {timestamp()} ] Start? [y/n]: "
+        f"{Style.RESET_ALL}"
+    ).strip().lower()
+
+    if answer != "y":
+        return
+
+    clear_console()
+
+    # Exact start screen after confirmation.
     notice(
-        f"Students: {len(students)} | "
-        f"Parallel: ON | "
-        f"Random delay: {'ON' if randomize_next else 'OFF'} | "
-        f"Fast mode: {'OFF' if randomize_next else 'ON'} | "
-        f"Manual select: {'ON' if manual_select else 'OFF'}",
-        Fore.LIGHTYELLOW_EX
+        f"Session: {SESSION_ID}",
+        Fore.LIGHTCYAN_EX
     )
+    separator()
+
+    render_working_lines(students)
 
     failed = 0
     futures = []
 
-    # Pipeline:
-    # 1. Start Student 1 Chrome.
-    # 2. Immediately start Student 1's task.
-    # 3. While Student 1 is working, start Student 2 Chrome.
-    # 4. Repeat for the remaining students.
     with ThreadPoolExecutor(max_workers=len(students)) as executor:
         for index, student in enumerate(students, start=1):
             try:
-                step(f"Student {index}: Starting Chrome")
-
                 driver = create_driver(index)
 
                 try:
-                    arrange_browser(
-                        driver,
-                        index,
-                        len(students)
-                    )
+                    arrange_browser(driver, index, len(students))
                 except Exception:
                     pass
-
-                step(
-                    f"Student {index}: Chrome ready, "
-                    "starting task"
-                )
 
                 futures.append(
                     executor.submit(
@@ -961,32 +999,23 @@ def main():
 
             except Exception as exc:
                 failed += 1
-
-                error(
-                    f"Student {index}: Chrome could not start: {exc}"
+                update_student_status(
+                    index,
+                    student,
+                    "Failed to start.",
+                    Fore.LIGHTRED_EX
                 )
+                log_session_line(f"[ ERROR : Student {index} ] {exc}")
 
-                notice(
-                    f"Student {index}: No browser window was created.",
-                    Fore.LIGHTYELLOW_EX
-                )
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as exc:
+                failed += 1
+                log_session_line(f"[ ERROR : Worker ] {exc}")
+                log_session_line(traceback.format_exc())
 
-    for future in as_completed(futures):
-        try:
-            future.result()
-        except Exception as exc:
-            failed += 1
-            error(f"Worker error: {exc}")
-
-    if failed:
-        SESSION_FINAL_STATUS = "partial_failure"
-        notice(
-            f"All tasks finished with {failed} error(s).",
-            Fore.LIGHTYELLOW_EX
-        )
-    else:
-        SESSION_FINAL_STATUS = "completed"
-        success("All tasks completed.")
+    SESSION_FINAL_STATUS = "partial_failure" if failed else "completed"
 
 
 if __name__ == "__main__":
@@ -995,39 +1024,40 @@ if __name__ == "__main__":
     try:
         init_session()
 
-        notice(
+        # First screen is intentionally shown before package setup.
+        bootstrap_notice(
             f"Session: {SESSION_ID}",
-            Fore.LIGHTCYAN_EX
+            ANSI_CYAN
         )
+        bootstrap_separator()
+
+        install_packages()
+
+        from colorama import Fore as ColoramaFore, Style as ColoramaStyle, init as colorama_init
+        from selenium import webdriver
+        from selenium.webdriver.chrome.service import Service
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait, Select
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.common.exceptions import TimeoutException
+
+        colorama_init(autoreset=True)
+        Fore = ColoramaFore
+        Style = ColoramaStyle
 
         main()
 
     except KeyboardInterrupt:
         final_status = "stopped_by_user"
-
-        try:
-            notice(
-                "Stopped by user.",
-                Fore.LIGHTYELLOW_EX
-            )
-        except Exception:
-            print("[ NOTICE ] Stopped by user.")
+        log_session_line("[ ERROR ] Stopped by user.")
 
     except Exception as exc:
         final_status = "fatal_error"
 
         try:
-            error(
-                f"Fatal error: {exc}"
-            )
-
-            log_session_line(
-                "[ ERROR TRACEBACK ]"
-            )
-            log_session_line(
-                traceback.format_exc()
-            )
-
+            error(f"Fatal error: {exc}")
+            log_session_line("[ ERROR TRACEBACK ]")
+            log_session_line(traceback.format_exc())
         except Exception:
             print(f"[ ERROR ] Fatal error: {exc}")
 
@@ -1037,23 +1067,11 @@ if __name__ == "__main__":
                 final_status = SESSION_FINAL_STATUS
 
             finish_session(final_status)
-
-            notice(
-                f"Session saved: {SESSION_DIR.name}\\"
-                f"{SESSION_ID}.txt",
-                Fore.LIGHTGREEN_EX
-            )
-
-            notice(
-                "Program finished. The window will stay open.",
-                Fore.LIGHTYELLOW_EX
-            )
-
         except Exception as exc:
             print(f"[ ERROR ] Could not save session: {exc}")
 
+        # Keep the window open without adding another NOTICE line.
         try:
-            input("Press Enter to close...")
+            input()
         except EOFError:
-            time.sleep(60)
-
+            time.sleep(1)
