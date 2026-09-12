@@ -1,0 +1,40 @@
+{
+  "confirm": false,
+  "randomize_next": false,
+  "manual_select": false,
+  "students": [
+    {
+      "student_id": "64521",
+      "title": "เด็กชาย",
+      "name": "ธนกฤต",
+      "surname": "วัฒนะ",
+      "room": "15",
+      "number": "1",
+      "course": "คณิตศาสตร์เสริม 6",
+      "teacher": "นายซีเอ บีอา",
+      "year_text": "ปีการศึกษา 2569 M.3 วันพฤหัสบดี"
+    },
+    {
+      "student_id": "65874",
+      "title": "เด็กหญิง",
+      "name": "ณิชาภา",
+      "surname": "รุ่งเรือง",
+      "room": "13",
+      "number": "9",
+      "course": "ภาษาอังกฤษเพื่อการสื่อสาร",
+      "teacher": "นายเอชไอ เจเค",
+      "year_text": "ปีการศึกษา 2569 M.3 วันจันทร์"
+    },
+    {
+      "student_id": "67203",
+      "title": "เด็กชาย",
+      "name": "ก้องภพ",
+      "surname": "บุญมี",
+      "room": "12",
+      "number": "22",
+      "course": "คอมพิวเตอร์เพิ่มเติม",
+      "teacher": "นางสาวแอลเอ็ม เอ็นโอ",
+      "year_text": "ปีการศึกษา 2569 M.3 วันศุกร์"
+    }
+  ]
+}
